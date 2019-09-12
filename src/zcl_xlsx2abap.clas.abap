@@ -56,6 +56,11 @@ private section.
       !IV_XML type XSTRING
     returning
       value(RO_XMLDOC) type ref to IF_IXML_DOCUMENT .
+  methods CONVERT_DATE
+    importing
+      !IV_DAYS type STRING
+    returning
+      value(RV_DATE) type DATS .
 ENDCLASS.
 
 
@@ -66,6 +71,16 @@ CLASS ZCL_XLSX2ABAP IMPLEMENTATION.
   METHOD constructor.
     m_xlsx = cl_xlsx_document=>load_document( iv_file ).
     m_workbook = m_xlsx->get_workbookpart( ).
+  ENDMETHOD.
+
+
+  METHOD convert_date.
+    DATA lv_days TYPE i.
+
+    CHECK iv_days CO '0123456789'.
+    lv_days = iv_days.
+    rv_date = c_excldt.
+    ADD lv_days TO rv_date.
   ENDMETHOD.
 
 
