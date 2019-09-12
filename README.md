@@ -1,2 +1,2 @@
 # xlsx2abap
-Xlsx to Abap
+Read Excel spreadsheet (OpenXml) from ABAP.
