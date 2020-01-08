@@ -49,7 +49,7 @@ private section.
   data M_SHEETS type TT_SHEET .
   data M_XLSX type ref to CL_XLSX_DOCUMENT .
   constants C_NS_R type STRING value 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ##NO_TEXT.
-  constants C_EXCLDT type DATS value '19000101' ##NO_TEXT.
+  constants C_EXCLDT type DATS value '18991230' ##NO_TEXT.
 
   methods GET_XMLDOC
     importing
@@ -109,6 +109,7 @@ CLASS ZCL_XLSXREADER IMPLEMENTATION.
              value  TYPE string,
              column TYPE string,
              row    TYPE string,
+             style  TYPE i,
            END OF ls_table.
 
     TYPES: BEGIN OF ls_string,
@@ -116,10 +117,19 @@ CLASS ZCL_XLSXREADER IMPLEMENTATION.
              value TYPE string,
            END OF ls_string.
 
+    TYPES: BEGIN OF ls_style,
+            index      TYPE i,
+            num_fmt_id TYPE string,
+          END OF ls_style.
+
     DATA: ls_string TYPE ls_string,
           lt_string TYPE TABLE OF ls_string,
+          ls_style  TYPE ls_style,
+          lt_style  TYPE TABLE OF ls_style,
           ls_table  TYPE ls_table,
-          lt_table  TYPE TABLE OF ls_table.
+          lt_table  TYPE TABLE OF ls_table,
+          lv_date   TYPE d,
+          lo_elem   TYPE REF TO if_ixml_element.
 
     DATA(lo_ixml_root) = lo_ixml_doc->get_root_element( ).
     DATA(lo_nodes)         = lo_ixml_root->get_elements_by_tag_name( name = 'row' ).
@@ -147,6 +157,11 @@ CLASS ZCL_XLSXREADER IMPLEMENTATION.
           ls_table-type = lo_att_child->get_value( ).
         ENDIF.
 
+        lo_att_child = lo_att->get_named_item( 's' ).
+        IF lo_att_child IS BOUND.
+          ls_table-style = lo_att_child->get_value( ).
+        ENDIF.
+
         IF ls_table-type IS INITIAL.
           ls_table-value = lo_node_r->get_value( ).
         ELSE.
@@ -168,11 +183,36 @@ CLASS ZCL_XLSXREADER IMPLEMENTATION.
     lo_node = lo_node_iterator->get_next( ).
     WHILE lo_node IS NOT INITIAL.
       CLEAR: ls_string.
-      ls_string-index = sy-tabix.
+      ls_string-index = sy-index - 1.
       ls_string-value = lo_node->get_value( ).
       APPEND ls_string TO lt_string.
       lo_node = lo_node_iterator->get_next( ).
     ENDWHILE.
+
+    " styles data
+    DATA(lo_styles)  = m_workbook->get_stylespart( ).
+    lo_ixml_doc      = get_xmldoc( lo_styles->get_data( ) ).
+    lo_ixml_root     = lo_ixml_doc->get_root_element( ).
+    lo_nodes         = lo_ixml_root->get_elements_by_tag_name( name = 'cellXfs' ).
+    lo_node_iterator = lo_nodes->create_iterator( ).
+    lo_node          = lo_node_iterator->get_next( ).
+
+    IF lo_node IS NOT INITIAL.
+      lo_elem         ?= lo_node.
+      lo_nodes         = lo_elem->get_elements_by_tag_name( name = 'xf' ).
+      lo_node_iterator = lo_nodes->create_iterator( ).
+
+      lo_node = lo_node_iterator->get_next( ).
+      WHILE lo_node IS NOT INITIAL.
+        CLEAR: ls_style.
+        ls_style-index      = sy-index - 1.
+        lo_att              = lo_node->get_attributes( ).
+        lo_att_child        = lo_att->get_named_item( 'numFmtId' ).
+        ls_style-num_fmt_id = lo_att_child->get_value( ).
+        APPEND ls_style TO lt_style.
+        lo_node = lo_node_iterator->get_next( ).
+      ENDWHILE.
+    ENDIF.
 
     LOOP AT lt_table INTO ls_table.
       "get column
@@ -185,6 +225,16 @@ CLASS ZCL_XLSXREADER IMPLEMENTATION.
           WITH KEY index = ls_table-index BINARY SEARCH.
         IF sy-subrc EQ 0.
           ls_table-value = ls_string-value.
+        ENDIF.
+      ELSEIF ls_table-value IS NOT INITIAL AND ls_table-style IS NOT INITIAL.
+        READ TABLE lt_style INTO ls_style
+          WITH KEY index = ls_table-style BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          CASE ls_style-num_fmt_id.
+            WHEN '14'.
+              lv_date = convert_date( ls_table-value ).
+              ls_table-value = |{ lv_date DATE = ENVIRONMENT }|.
+          ENDCASE.
         ENDIF.
       ENDIF.
       CONDENSE ls_table-value.
